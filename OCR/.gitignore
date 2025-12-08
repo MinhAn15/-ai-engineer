@@ -4,50 +4,30 @@ __pycache__/
 *$py.class
 *.pyc
 *.pyo
-*.pyd
-.Python
 
 # Virtual Environment
 venv/
 env/
 ENV/
-.venv/
 
 # Jupyter Notebook
 .ipynb_checkpoints/
-*.ipynb_checkpoints
 
 # IDEs
 .vscode/
 .idea/
 *.swp
-*.swo
-.DS_Store
 
 # Project outputs
 outputs/
 *.csv
 *.json
 *.log
-*.txt.bak
 
 # Windows
 Thumbs.db
 desktop.ini
 ~$*
 
-# Distribution / packaging
-dist/
-build/
-*.egg-info/
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Data (optional - uncomment if needed)
-# data/
-# *.pdf
-# *.png
-# *.jpg
+# Data (optional)
+# data/samples/*.pdf
