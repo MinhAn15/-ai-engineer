@@ -23,6 +23,10 @@ outputs/
 *.csv
 *.json
 *.log
+*.toon
+
+# Environment (keep .env.example)
+.env
 
 # Windows
 Thumbs.db

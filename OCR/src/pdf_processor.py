@@ -19,6 +19,13 @@ import pypdf
 # Set Tesseract command
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 
+# Try to import preprocessing module
+try:
+    from src.image_preprocessing import preprocess_for_ocr
+    PREPROCESSING_AVAILABLE = True
+except ImportError:
+    PREPROCESSING_AVAILABLE = False
+
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     '''Extract text from PDF using pypdf (for text-based PDFs).'''
@@ -49,19 +56,68 @@ def pdf_to_images(pdf_path: str, dpi: int = DEFAULT_DPI) -> List[Image.Image]:
         return []
 
 
-def ocr_image_to_text(image: Image.Image, lang: str = "eng") -> str:
-    '''OCR image to text using Tesseract.'''
+# Try to import postprocessing module
+try:
+    from src.text_postprocessing import clean_ocr_text
+    POSTPROCESSING_AVAILABLE = True
+except ImportError:
+    POSTPROCESSING_AVAILABLE = False
+
+
+def ocr_image_to_text(
+    image: Image.Image, 
+    lang: str = "eng",
+    preprocess: bool = False,
+    preprocess_method: str = "adaptive",
+    postprocess: bool = True
+) -> str:
+    '''
+    OCR image to text using Tesseract.
+    
+    Args:
+        image: PIL Image object
+        lang: Tesseract language code
+        preprocess: Enable preprocessing for better accuracy
+        preprocess_method: 'simple', 'adaptive', or 'advanced'
+        postprocess: Enable text cleanup after OCR
+    '''
     try:
+        # Apply preprocessing if enabled
+        if preprocess and PREPROCESSING_AVAILABLE:
+            image = preprocess_for_ocr(image, method=preprocess_method)
+        
         text = pytesseract.image_to_string(image, lang=lang)
+        
+        # Apply postprocessing if enabled
+        if postprocess and POSTPROCESSING_AVAILABLE:
+            text = clean_ocr_text(text)
+        
         return text
     except Exception as e:
         print(f"⚠ OCR error: {e}")
         return ""
 
 
-def ocr_image_to_blocks(image: Image.Image, lang: str = "eng") -> List[dict]:
-    '''OCR image and return text blocks with bounding boxes.'''
+def ocr_image_to_blocks(
+    image: Image.Image, 
+    lang: str = "eng",
+    preprocess: bool = False,
+    preprocess_method: str = "adaptive"
+) -> List[dict]:
+    '''
+    OCR image and return text blocks with bounding boxes.
+    
+    Args:
+        image: PIL Image object
+        lang: Tesseract language code
+        preprocess: Enable preprocessing for better accuracy
+        preprocess_method: 'simple', 'adaptive', or 'advanced'
+    '''
     try:
+        # Apply preprocessing if enabled
+        if preprocess and PREPROCESSING_AVAILABLE:
+            image = preprocess_for_ocr(image, method=preprocess_method)
+        
         data = pytesseract.image_to_data(
             image, lang=lang, output_type=pytesseract.Output.DICT
         )
@@ -97,3 +153,5 @@ if __name__ == "__main__":
     print("✓ PDF processor module loaded")
     print(f"✓ Tesseract: {TESSERACT_PATH}")
     print(f"✓ Poppler: {POPPLER_PATH}")
+    print(f"✓ Preprocessing available: {PREPROCESSING_AVAILABLE}")
+
