@@ -190,6 +190,129 @@ def extract_with_llm(
         return f"# Error: LLM extraction failed - {str(e)}"
 
 
+def extract_with_segments(
+    segments: List[Dict],
+    schema_prompt: str,
+    api_key: Optional[str] = None,
+    model: str = "gemini-2.0-flash-exp"
+) -> Dict[str, Any]:
+    """
+    Extract structured data from document segments WITH source references.
+    Returns both TOON output and structured extraction with segment refs.
+    
+    Args:
+        segments: List of segments with index, text, and bbox
+        schema_prompt: Natural language description of what to extract
+        api_key: Gemini API key
+        model: Gemini model to use
+        
+    Returns:
+        Dict with 'toon', 'fields', and optional 'error'
+    """
+    if not GEMINI_AVAILABLE:
+        return {"error": "google-generativeai not installed", "toon": "", "fields": []}
+    
+    # Build segment context with indices
+    segment_text = ""
+    for seg in segments:
+        idx = seg.get('index', 0)
+        text = seg.get('text', '').strip()
+        if text:
+            segment_text += f"[SEGMENT {idx}]\n{text}\n\n"
+    
+    # Get API key
+    api_key = api_key or os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        return {"error": "GEMINI_API_KEY not set", "toon": "", "fields": []}
+    
+    # Create extraction prompt with segment references
+    prompt = f"""You are a data extraction expert. Extract structured information from the document segments below.
+
+USER REQUEST:
+{schema_prompt}
+
+DOCUMENT SEGMENTS (each has a segment number):
+---
+{segment_text}
+---
+
+INSTRUCTIONS:
+1. Extract the requested information from the segments
+2. For EACH extracted field, include a "_ref" property with the segment number(s) where you found that information
+3. Output in JSON format (easier for parsing segment references)
+
+OUTPUT FORMAT (JSON):
+{{
+  "fields": [
+    {{
+      "name": "company_name",
+      "value": "LIBERTY MUTUAL INSURANCE COMPANY",
+      "refs": [2, 3]
+    }},
+    {{
+      "name": "invoice_number",
+      "value": "0125",
+      "refs": [5]
+    }},
+    ...
+  ]
+}}
+
+RULES:
+- "refs" must be an array of segment numbers (integers) where you found the data
+- Extract ALL fields requested in the user's schema
+- If a field spans multiple segments, include all relevant segment numbers
+- If you cannot find a field, set value to null and refs to []
+
+OUTPUT (JSON only, no explanations):"""
+
+    try:
+        genai.configure(api_key=api_key)
+        llm = genai.GenerativeModel(model)
+        response = llm.generate_content(prompt)
+        
+        # Clean response
+        output = response.text.strip()
+        output = re.sub(r'^```json\n?', '', output)
+        output = re.sub(r'^```\n?', '', output)
+        output = re.sub(r'\n?```$', '', output)
+        
+        # Parse JSON
+        try:
+            result = json.loads(output)
+            fields = result.get('fields', [])
+        except json.JSONDecodeError:
+            # Fallback: try to extract fields manually
+            fields = []
+        
+        # Also generate TOON format for display
+        toon_lines = ["@entity:Extraction", "_id:extract_1"]
+        for field in fields:
+            name = field.get('name', 'unknown')
+            value = field.get('value', '')
+            refs = field.get('refs', [])
+            
+            if value:
+                toon_lines.append(f"{name}:{value}")
+                if refs:
+                    toon_lines.append(f"{name}_ref:{','.join(map(str, refs))}")
+        
+        toon_output = "\n".join(toon_lines)
+        
+        return {
+            "toon": toon_output,
+            "fields": fields,
+            "error": None
+        }
+        
+    except Exception as e:
+        return {
+            "error": f"LLM extraction failed - {str(e)}",
+            "toon": "",
+            "fields": []
+        }
+
+
 def parse_toon(toon_text: str) -> Dict[str, Any]:
     """
     Parse TOON format into structured dict with validation.

@@ -146,7 +146,7 @@ async def process_document(
                     result = ocr.process(img, lang=request.language)
                     all_text.append(result.full_text)
                     all_blocks.extend([
-                        {"text": b.text, "confidence": b.confidence, "source": b.source}
+                        {"text": b.text, "confidence": b.confidence, "source": b.source, "bbox": b.bbox}
                         for b in result.blocks
                     ])
                     total_tokens += result.stats.get("tokens_used", 0)
@@ -166,7 +166,7 @@ async def process_document(
                 
                 full_text = result.full_text
                 all_blocks = [
-                    {"text": b.text, "confidence": b.confidence, "source": b.source}
+                    {"text": b.text, "confidence": b.confidence, "source": b.source, "bbox": b.bbox}
                     for b in result.blocks
                 ]
                 avg_confidence = sum(b["confidence"] for b in all_blocks) / len(all_blocks) if all_blocks else 0
@@ -236,7 +236,7 @@ async def process_document(
                     "latency_ms": result.latency_ms,
                     "models_used": result.models_used,
                     "text_blocks": [
-                        {"text": b.text, "confidence": b.confidence}
+                        {"text": b.text, "confidence": b.confidence, "bbox": b.bounding_box}
                         for b in result.text_blocks
                     ]
                 }, f, indent=2, ensure_ascii=False)
@@ -279,7 +279,13 @@ async def extract_schema(
 ):
     """
     Extract structured data from OCR text using LLM.
+    Returns extraction results WITH segment references for source mapping.
     """
+    import json
+    from PIL import Image
+    from src.pdf_processor import ocr_image_to_segments, pdf_to_images
+    from src.llm_extractor import extract_with_segments, parse_toon
+    
     # Check quota
     check_quota(current_user, db, tokens_needed=1000)  # Estimate
     
@@ -301,43 +307,44 @@ async def extract_schema(
             detail="Document must be processed with OCR first"
         )
     
-    if not doc.output_txt_path or not os.path.exists(doc.output_txt_path):
+    if not doc.original_path or not os.path.exists(doc.original_path):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OCR output not found"
+            detail="Original file not found"
         )
     
     try:
-        # Read OCR text
-        with open(doc.output_txt_path, "r", encoding="utf-8") as f:
-            ocr_text = f.read()
+        # Get segments for the document
+        file_ext = Path(doc.original_path).suffix.lower()
         
-        # Read OCR blocks for confidence filtering
-        import json
-        with open(doc.output_json_path, "r", encoding="utf-8") as f:
-            ocr_data = json.load(f)
-        ocr_blocks = ocr_data.get("text_blocks", [])
+        if file_ext == '.pdf':
+            images = pdf_to_images(doc.original_path)
+            if images:
+                segments = ocr_image_to_segments(images[0])
+            else:
+                segments = []
+        else:
+            img = Image.open(doc.original_path)
+            segments = ocr_image_to_segments(img)
         
-        # Import LLM extractor
-        from src.llm_extractor import extract_with_llm, parse_toon
-        
-        # Run LLM extraction
-        toon_result = extract_with_llm(
-            ocr_text,
-            request.schema_prompt,
+        # Run extraction with segment references
+        result = extract_with_segments(
+            segments=segments,
+            schema_prompt=request.schema_prompt,
             api_key=GEMINI_API_KEY,
-            model=LLM_MODEL,
-            min_confidence=request.min_confidence,
-            ocr_blocks=ocr_blocks
+            model=LLM_MODEL
         )
         
-        if toon_result.startswith("# Error"):
+        if result.get("error"):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=toon_result
+                detail=result["error"]
             )
         
-        # Parse TOON
+        toon_result = result.get("toon", "")
+        fields = result.get("fields", [])
+        
+        # Parse TOON for entity/relation counts
         parsed = parse_toon(toon_result)
         
         # Save TOON output
@@ -346,9 +353,15 @@ async def extract_schema(
         with open(toon_path, "w", encoding="utf-8") as f:
             f.write(toon_result)
         
+        # Save structured fields with refs
+        fields_path = user_dir / "extraction.json"
+        with open(fields_path, "w", encoding="utf-8") as f:
+            json.dump({"fields": fields, "segments": segments}, f, indent=2, ensure_ascii=False)
+        
         # Estimate tokens used
-        input_tokens = int(len(ocr_text.split()) * 1.3)
-        output_tokens = int(len(toon_result.split()) * 1.3)
+        segment_text = " ".join([s.get("text", "") for s in segments])
+        input_tokens = int(len(segment_text.split()) * 1.3)
+        output_tokens = int(len(str(fields).split()) * 1.3)
         total_tokens = input_tokens + output_tokens
         
         # Log usage
@@ -365,7 +378,7 @@ async def extract_schema(
         # Update document
         doc.output_toon_path = str(toon_path)
         doc.schema_prompt = request.schema_prompt
-        doc.num_entities = len(parsed.get("entities", []))
+        doc.num_entities = len(fields)  # Use field count as entity count
         doc.num_relations = len(parsed.get("relations", []))
         db.commit()
         
@@ -376,6 +389,7 @@ async def extract_schema(
             document_id=doc.id,
             status="extracted",
             toon_output=toon_result,
+            fields=fields,
             num_entities=doc.num_entities,
             num_relations=doc.num_relations,
             tokens_used=total_tokens
@@ -581,3 +595,175 @@ async def get_document_usage(
             }
         }
     }
+
+
+@router.get("/documents/{document_id}/image")
+async def get_document_image(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the original document image.
+    For PDFs, returns first page as image.
+    """
+    from fastapi.responses import FileResponse
+    
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+    
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    if not doc.original_path or not os.path.exists(doc.original_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Original file not found"
+        )
+    
+    file_ext = Path(doc.original_path).suffix.lower()
+    
+    # For PDFs, convert first page to image
+    if file_ext == '.pdf':
+        from src.pdf_processor import pdf_to_images
+        from PIL import Image
+        import io
+        from fastapi.responses import StreamingResponse
+        
+        images = pdf_to_images(doc.original_path)
+        if images:
+            # Convert first page to PNG
+            buffer = io.BytesIO()
+            images[0].save(buffer, format="PNG")
+            buffer.seek(0)
+            return StreamingResponse(buffer, media_type="image/png")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to convert PDF to image"
+            )
+    else:
+        # For images, serve directly
+        media_type_map = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.bmp': 'image/bmp',
+            '.tiff': 'image/tiff'
+        }
+        return FileResponse(
+            doc.original_path,
+            media_type=media_type_map.get(file_ext, 'application/octet-stream')
+        )
+
+
+@router.get("/documents/{document_id}/blocks")
+async def get_document_blocks(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get OCR text blocks with bounding box coordinates.
+    Used for text-to-image coordinate mapping.
+    """
+    import json
+    
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+    
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    if not doc.output_json_path or not os.path.exists(doc.output_json_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OCR blocks not available"
+        )
+    
+    with open(doc.output_json_path, "r", encoding="utf-8") as f:
+        ocr_data = json.load(f)
+    
+    blocks = ocr_data.get("text_blocks", [])
+    
+    # Add index to each block for UI reference
+    for i, block in enumerate(blocks):
+        block["index"] = i + 1
+    
+    return {
+        "document_id": document_id,
+        "total_blocks": len(blocks),
+        "blocks": blocks
+    }
+
+
+@router.get("/documents/{document_id}/segments")
+async def get_document_segments(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get OCR text SEGMENTS (paragraph-level grouping) with bounding boxes.
+    Groups individual words into logical paragraphs/sections.
+    Used for text-to-image coordinate mapping (like LandingAI).
+    """
+    from PIL import Image
+    from src.pdf_processor import ocr_image_to_segments, pdf_to_images
+    
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+    
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    if not doc.original_path or not os.path.exists(doc.original_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Original file not found"
+        )
+    
+    file_ext = Path(doc.original_path).suffix.lower()
+    
+    try:
+        if file_ext == '.pdf':
+            # Convert PDF to image first
+            images = pdf_to_images(doc.original_path)
+            if not images:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to convert PDF to image"
+                )
+            # Use first page
+            segments = ocr_image_to_segments(images[0])
+        else:
+            # Direct image processing
+            img = Image.open(doc.original_path)
+            segments = ocr_image_to_segments(img)
+        
+        return {
+            "document_id": document_id,
+            "total_segments": len(segments),
+            "segments": segments
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to extract segments: {str(e)}"
+        )

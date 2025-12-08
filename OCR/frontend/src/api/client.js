@@ -96,6 +96,20 @@ export const ocrAPI = {
     getUsage: (documentId) =>
         api.get(`/ocr/documents/${documentId}/usage`),
 
+    getBlocks: (documentId) =>
+        api.get(`/ocr/documents/${documentId}/blocks`),
+
+    getSegments: (documentId) =>
+        api.get(`/ocr/documents/${documentId}/segments`),
+
+    // Fetch image as blob and return blob URL
+    getImage: async (documentId) => {
+        const response = await api.get(`/ocr/documents/${documentId}/image`, {
+            responseType: 'blob'
+        });
+        return URL.createObjectURL(response.data);
+    },
+
     deleteDocument: (documentId) =>
         api.delete(`/ocr/documents/${documentId}`),
 };

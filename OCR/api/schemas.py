@@ -98,10 +98,12 @@ class ExtractRequest(BaseModel):
     min_confidence: float = 0.75
 
 
+
 class ExtractResponse(BaseModel):
     document_id: int
     status: str
     toon_output: Optional[str] = None
+    fields: Optional[List[dict]] = None  # Structured extraction with refs
     num_entities: int = 0
     num_relations: int = 0
     tokens_used: int = 0
