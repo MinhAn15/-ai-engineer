@@ -57,32 +57,28 @@ export default function LoginPage() {
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label className="block text-gray-400 text-sm mb-2">Username</label>
-                        <div className="relative">
-                            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
-                            <input
-                                type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                className="input-dark pl-11"
-                                placeholder="Enter username"
-                                required
-                            />
-                        </div>
+                        <input
+                            type="text"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            className="input-dark"
+                            placeholder="Enter username"
+                            required
+                            autoComplete="username"
+                        />
                     </div>
 
                     <div>
                         <label className="block text-gray-400 text-sm mb-2">Password</label>
-                        <div className="relative">
-                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="input-dark pl-11"
-                                placeholder="Enter password"
-                                required
-                            />
-                        </div>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="input-dark"
+                            placeholder="Enter password"
+                            required
+                            autoComplete="current-password"
+                        />
                     </div>
 
                     <button
@@ -103,10 +99,6 @@ export default function LoginPage() {
                         )}
                     </button>
                 </form>
-
-                <p className="text-gray-600 text-xs text-center mt-6">
-                    Default: admin / admin123
-                </p>
             </div>
         </div>
     );

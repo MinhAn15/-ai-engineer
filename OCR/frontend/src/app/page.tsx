@@ -158,13 +158,14 @@ export default function DashboardPage() {
           {/* Search bar */}
           <div className="mb-8 max-w-xl">
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
+              <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search documents..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="input-dark pl-11"
+                className="input-dark"
+                style={{ paddingLeft: '52px' }}
               />
             </div>
           </div>

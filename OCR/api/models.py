@@ -57,7 +57,7 @@ class Document(Base):
     
     # Relationships
     user = relationship("User", back_populates="documents")
-    usage_logs = relationship("UsageLog", back_populates="document")
+    usage_logs = relationship("UsageLog", back_populates="document", cascade="all, delete-orphan")
 
 
 class UsageLog(Base):

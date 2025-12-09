@@ -19,7 +19,8 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   margin: 0;
@@ -42,7 +43,7 @@ body {
 .sidebar-nav-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   padding: 10px 16px;
   color: var(--text-secondary);
   font-size: 14px;

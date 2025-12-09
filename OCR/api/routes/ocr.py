@@ -524,15 +524,24 @@ async def delete_document(
             detail="Document not found"
         )
     
-    # Delete files
-    if doc.original_path:
-        user_dir = Path(doc.original_path).parent
-        if user_dir.exists():
-            shutil.rmtree(user_dir)
+    # Store path before deleting from DB
+    file_path = doc.original_path
     
-    # Delete database record
+    # Delete related usage logs first (foreign key constraint)
+    db.query(UsageLog).filter(UsageLog.document_id == document_id).delete()
+    
+    # Delete database record first (most important)
     db.delete(doc)
     db.commit()
+    
+    # Try to delete files (optional, don't fail if can't)
+    if file_path:
+        try:
+            user_dir = Path(file_path).parent
+            if user_dir.exists():
+                shutil.rmtree(user_dir, ignore_errors=True)
+        except:
+            pass  # Silently ignore file deletion errors
 
 
 @router.get("/documents/{document_id}/usage")
@@ -722,14 +731,13 @@ async def get_document_segments(
     Used for text-to-image coordinate mapping (like LandingAI).
     
     Args:
-        classify: If True, classify each segment by type (text/figure/table/attestation/marginalia)
-        estimate_only: If True, return only the token estimate without running classification
+        classify: If True, classify each segment by type using LayoutLMv3 (text/table/figure/title/list)
+        estimate_only: If True, return only the segment count (no tokens needed - LayoutLMv3 is free)
     """
     from PIL import Image
     from src.pdf_processor import ocr_image_to_segments, pdf_to_images
-    from src.layout_classifier import (
-        estimate_classification_tokens, 
-        classify_segments_batch,
+    from src.layout_analysis import (
+        classify_segments,
         get_layout_summary,
         LAYOUT_COLORS
     )
@@ -769,27 +777,26 @@ async def get_document_segments(
         # Get segments
         segments = ocr_image_to_segments(image)
         
-        # If estimate_only, return just the token estimate
+        # If estimate_only, return info (LayoutLMv3 is free, no token cost)
         if estimate_only:
-            estimated_tokens = estimate_classification_tokens(len(segments))
             return {
                 "document_id": document_id,
                 "total_segments": len(segments),
-                "estimated_tokens": estimated_tokens,
+                "estimated_tokens": 0,  # LayoutLMv3 is free!
                 "classify": False,
-                "message": f"Classification would use approximately {estimated_tokens} tokens for {len(segments)} segments"
+                "message": f"LayoutLMv3 classification is FREE for {len(segments)} segments (no API tokens needed)"
             }
         
-        # If classify requested, run layout classification
+        # If classify requested, run layout classification with LayoutLMv3
         if classify:
-            segments = classify_segments_batch(image, segments)
+            segments = classify_segments(image, segments)
             layout_summary = get_layout_summary(segments)
         else:
             # Add default type for all segments
             for seg in segments:
                 seg["type"] = "text"
                 seg["type_confidence"] = 1.0
-                seg["color"] = LAYOUT_COLORS["text"]
+                seg["color"] = LAYOUT_COLORS.get("text", "#22c55e")
             layout_summary = {"text": len(segments)}
         
         return {

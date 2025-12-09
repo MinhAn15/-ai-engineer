@@ -35,4 +35,4 @@ def init_db():
     """Initialize database tables"""
     from api.models import User, Document, UsageLog, Quota
     Base.metadata.create_all(bind=engine)
-    print("✓ Database tables created")
+    print("[+] Database tables created")

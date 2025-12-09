@@ -17,12 +17,19 @@ References:
 
 import os
 import sys
+import io
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Union
 from dataclasses import dataclass, field
 from PIL import Image
-import io
 import base64
+
+# Fix Windows console encoding for Unicode characters
+if sys.platform == 'win32':
+    if hasattr(sys.stdout, 'buffer') and not isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'buffer') and not isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))

@@ -631,12 +631,17 @@ export default function DocumentDetailPage() {
                                                 </div>
                                                 <div className="text-xs text-gray-600 mt-2 space-y-1">
                                                     <div className="flex items-start gap-1">
-                                                        <span>💡</span>
-                                                        <span><strong>Lower</strong> = more text reprocessed by AI (uses tokens, more accurate)</span>
+                                                        <span>📌</span>
+                                                        <span>Text với confidence <strong>dưới</strong> ngưỡng này → gửi cho AI xử lý lại</span>
                                                     </div>
                                                     <div className="flex items-start gap-1">
-                                                        <span>💡</span>
-                                                        <span><strong>Higher</strong> = less text sent to AI (saves tokens, keeps Tesseract)</span>
+                                                        <span>📌</span>
+                                                        <span>Text với confidence <strong>trên</strong> ngưỡng này → giữ nguyên từ Tesseract</span>
+                                                    </div>
+                                                    <div className="mt-2 p-2 bg-white/50 rounded text-gray-700">
+                                                        <div><strong>Ví dụ với ngưỡng 75%:</strong></div>
+                                                        <div>• "ABC Corp" (90% conf) → giữ nguyên ✓</div>
+                                                        <div>• "Đ1a ch1" (60% conf) → AI xử lý lại → "Địa chỉ"</div>
                                                     </div>
                                                 </div>
                                             </div>

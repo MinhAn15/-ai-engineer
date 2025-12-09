@@ -22,7 +22,7 @@ from api.routes import auth, users, ocr
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     # Startup
-    print("🚀 Starting OCR API Server...")
+    print("[*] Starting OCR API Server...")
     
     # Initialize database
     init_db()
@@ -41,19 +41,19 @@ async def lifespan(app: FastAPI):
             )
             db.add(admin)
             db.commit()
-            print(f"✓ Default admin user created: {ADMIN_EMAIL}")
+            print(f"[+] Default admin user created: {ADMIN_EMAIL}")
         else:
-            print(f"✓ Admin user exists: {ADMIN_EMAIL}")
+            print(f"[+] Admin user exists: {ADMIN_EMAIL}")
     finally:
         db.close()
     
-    print("✓ API Server ready!")
-    print("📄 Swagger docs: http://localhost:8000/docs")
+    print("[+] API Server ready!")
+    print("[i] Swagger docs: http://localhost:8000/docs")
     
     yield
     
     # Shutdown
-    print("👋 Shutting down...")
+    print("[*] Shutting down...")
 
 
 # Create FastAPI app
