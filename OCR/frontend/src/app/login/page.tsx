@@ -1,20 +1,22 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Lock, User, Loader2, ArrowRight } from 'lucide-react';
-import { authAPI } from '../api/client';
-import { useAuth } from '../context/AuthContext';
-import NeurondLogo from '../components/NeurondLogo';
+'use client';
 
-export default function Login() {
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Lock, User, Loader2, ArrowRight } from 'lucide-react';
+import { authAPI } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import NeurondLogo from '@/components/NeurondLogo';
+
+export default function LoginPage() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const navigate = useNavigate();
+    const router = useRouter();
     const { login } = useAuth();
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setLoading(true);
@@ -22,8 +24,8 @@ export default function Login() {
         try {
             const data = await authAPI.login(username, password);
             login(data.access_token);
-            navigate('/');
-        } catch (err) {
+            router.push('/');
+        } catch (err: any) {
             setError(err.response?.data?.detail || 'Login failed. Please try again.');
         } finally {
             setLoading(false);

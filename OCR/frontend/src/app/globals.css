@@ -50,6 +50,7 @@ body {
   transition: all 0.15s ease;
   border-radius: 8px;
   margin: 2px 8px;
+  text-decoration: none;
 }
 
 .sidebar-nav-item:hover {
@@ -163,6 +164,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   transition: all 0.15s;
+  text-decoration: none;
+  display: block;
 }
 
 .history-item:hover {

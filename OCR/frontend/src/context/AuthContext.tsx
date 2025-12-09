@@ -1,20 +1,43 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { userAPI } from '../api/client';
+'use client';
 
-const AuthContext = createContext(null);
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { userAPI } from '@/lib/api';
 
-export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
+interface User {
+    id: number;
+    username: string;
+    email?: string;
+    is_admin: boolean;
+}
+
+interface AuthContextType {
+    user: User | null;
+    token: string | null;
+    loading: boolean;
+    isAuthenticated: boolean;
+    login: (accessToken: string) => void;
+    logout: () => void;
+    refreshUser: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+    const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
-    const [token, setToken] = useState(localStorage.getItem('token'));
+    const [token, setToken] = useState<string | null>(null);
 
     useEffect(() => {
-        if (token) {
+        // Only run on client
+        const savedToken = localStorage.getItem('token');
+        setToken(savedToken);
+
+        if (savedToken) {
             fetchUser();
         } else {
             setLoading(false);
         }
-    }, [token]);
+    }, []);
 
     const fetchUser = async () => {
         try {
@@ -28,9 +51,10 @@ export function AuthProvider({ children }) {
         }
     };
 
-    const login = (accessToken) => {
+    const login = (accessToken: string) => {
         localStorage.setItem('token', accessToken);
         setToken(accessToken);
+        fetchUser();
     };
 
     const logout = () => {
@@ -39,7 +63,7 @@ export function AuthProvider({ children }) {
         setUser(null);
     };
 
-    const value = {
+    const value: AuthContextType = {
         user,
         token,
         loading,

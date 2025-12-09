@@ -711,6 +711,8 @@ async def get_document_blocks(
 @router.get("/documents/{document_id}/segments")
 async def get_document_segments(
     document_id: int,
+    classify: bool = False,
+    estimate_only: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -718,9 +720,19 @@ async def get_document_segments(
     Get OCR text SEGMENTS (paragraph-level grouping) with bounding boxes.
     Groups individual words into logical paragraphs/sections.
     Used for text-to-image coordinate mapping (like LandingAI).
+    
+    Args:
+        classify: If True, classify each segment by type (text/figure/table/attestation/marginalia)
+        estimate_only: If True, return only the token estimate without running classification
     """
     from PIL import Image
     from src.pdf_processor import ocr_image_to_segments, pdf_to_images
+    from src.layout_classifier import (
+        estimate_classification_tokens, 
+        classify_segments_batch,
+        get_layout_summary,
+        LAYOUT_COLORS
+    )
     
     doc = db.query(Document).filter(
         Document.id == document_id,
@@ -742,24 +754,50 @@ async def get_document_segments(
     file_ext = Path(doc.original_path).suffix.lower()
     
     try:
+        # Load image
         if file_ext == '.pdf':
-            # Convert PDF to image first
             images = pdf_to_images(doc.original_path)
             if not images:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to convert PDF to image"
                 )
-            # Use first page
-            segments = ocr_image_to_segments(images[0])
+            image = images[0]
         else:
-            # Direct image processing
-            img = Image.open(doc.original_path)
-            segments = ocr_image_to_segments(img)
+            image = Image.open(doc.original_path)
+        
+        # Get segments
+        segments = ocr_image_to_segments(image)
+        
+        # If estimate_only, return just the token estimate
+        if estimate_only:
+            estimated_tokens = estimate_classification_tokens(len(segments))
+            return {
+                "document_id": document_id,
+                "total_segments": len(segments),
+                "estimated_tokens": estimated_tokens,
+                "classify": False,
+                "message": f"Classification would use approximately {estimated_tokens} tokens for {len(segments)} segments"
+            }
+        
+        # If classify requested, run layout classification
+        if classify:
+            segments = classify_segments_batch(image, segments)
+            layout_summary = get_layout_summary(segments)
+        else:
+            # Add default type for all segments
+            for seg in segments:
+                seg["type"] = "text"
+                seg["type_confidence"] = 1.0
+                seg["color"] = LAYOUT_COLORS["text"]
+            layout_summary = {"text": len(segments)}
         
         return {
             "document_id": document_id,
             "total_segments": len(segments),
+            "layout_summary": layout_summary,
+            "color_legend": LAYOUT_COLORS,
+            "classified": classify,
             "segments": segments
         }
     except Exception as e:
@@ -767,3 +805,4 @@ async def get_document_segments(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to extract segments: {str(e)}"
         )
+

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // API base URL
-const API_URL = 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Create axios instance
 const api = axios.create({
@@ -11,33 +11,35 @@ const api = axios.create({
     },
 });
 
-// Add token to requests
-api.interceptors.request.use(
-    (config) => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    },
-    (error) => Promise.reject(error)
-);
+// Add token to requests (client-side only)
+if (typeof window !== 'undefined') {
+    api.interceptors.request.use(
+        (config) => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
 
-// Handle auth errors
-api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        if (error.response?.status === 401) {
-            localStorage.removeItem('token');
-            window.location.href = '/login';
+    // Handle auth errors
+    api.interceptors.response.use(
+        (response) => response,
+        (error) => {
+            if (error.response?.status === 401) {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+            }
+            return Promise.reject(error);
         }
-        return Promise.reject(error);
-    }
-);
+    );
+}
 
 // Auth API
 export const authAPI = {
-    login: async (username, password) => {
+    login: async (username: string, password: string) => {
         const formData = new URLSearchParams();
         formData.append('username', username);
         formData.append('password', password);
@@ -58,7 +60,7 @@ export const userAPI = {
 
 // OCR API
 export const ocrAPI = {
-    upload: async (file) => {
+    upload: async (file: File) => {
         const formData = new FormData();
         formData.append('file', file);
 
@@ -67,7 +69,12 @@ export const ocrAPI = {
         });
     },
 
-    process: (documentId, options = {}) =>
+    process: (documentId: number, options: {
+        language?: string;
+        preprocess?: boolean;
+        useHybrid?: boolean;
+        minConfidence?: number;
+    } = {}) =>
         api.post(`/ocr/process/${documentId}`, {
             language: options.language || 'eng',
             preprocess: options.preprocess || false,
@@ -75,7 +82,7 @@ export const ocrAPI = {
             min_confidence: options.minConfidence || 0.75,
         }),
 
-    extract: (documentId, schemaPrompt, minConfidence = 0.75) =>
+    extract: (documentId: number, schemaPrompt: string, minConfidence = 0.75) =>
         api.post(`/ocr/extract/${documentId}`, {
             schema_prompt: schemaPrompt,
             min_confidence: minConfidence,
@@ -84,33 +91,38 @@ export const ocrAPI = {
     getDocuments: (skip = 0, limit = 20) =>
         api.get(`/ocr/documents?skip=${skip}&limit=${limit}`),
 
-    getDocument: (documentId) =>
+    getDocument: (documentId: number) =>
         api.get(`/ocr/documents/${documentId}`),
 
-    getText: (documentId) =>
+    getText: (documentId: number) =>
         api.get(`/ocr/documents/${documentId}/text`),
 
-    getToon: (documentId) =>
+    getToon: (documentId: number) =>
         api.get(`/ocr/documents/${documentId}/toon`),
 
-    getUsage: (documentId) =>
+    getUsage: (documentId: number) =>
         api.get(`/ocr/documents/${documentId}/usage`),
 
-    getBlocks: (documentId) =>
+    getBlocks: (documentId: number) =>
         api.get(`/ocr/documents/${documentId}/blocks`),
 
-    getSegments: (documentId) =>
-        api.get(`/ocr/documents/${documentId}/segments`),
+    getSegments: (documentId: number, options: { classify?: boolean; estimateOnly?: boolean } = {}) =>
+        api.get(`/ocr/documents/${documentId}/segments`, {
+            params: {
+                classify: options.classify || false,
+                estimate_only: options.estimateOnly || false
+            }
+        }),
 
     // Fetch image as blob and return blob URL
-    getImage: async (documentId) => {
+    getImage: async (documentId: number) => {
         const response = await api.get(`/ocr/documents/${documentId}/image`, {
             responseType: 'blob'
         });
         return URL.createObjectURL(response.data);
     },
 
-    deleteDocument: (documentId) =>
+    deleteDocument: (documentId: number) =>
         api.delete(`/ocr/documents/${documentId}`),
 };
 

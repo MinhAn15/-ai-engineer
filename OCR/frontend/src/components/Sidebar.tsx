@@ -1,11 +1,19 @@
-import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Upload, FolderOpen, Search, LogOut, Clock } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
 import NeurondLogo from './NeurondLogo';
 
-export default function Sidebar({ recentDocs = [] }) {
+interface Document {
+    id: number;
+    filename: string;
+}
+
+export default function Sidebar({ recentDocs = [] }: { recentDocs?: Document[] }) {
     const { user, logout } = useAuth();
+    const pathname = usePathname();
 
     const navItems = [
         { icon: Upload, label: 'New Upload', path: '/' },
@@ -24,16 +32,14 @@ export default function Sidebar({ recentDocs = [] }) {
             {/* Navigation */}
             <nav className="flex-1 overflow-y-auto">
                 {navItems.map((item) => (
-                    <NavLink
+                    <Link
                         key={item.path}
-                        to={item.path}
-                        className={({ isActive }) =>
-                            `sidebar-nav-item ${isActive ? 'active' : ''}`
-                        }
+                        href={item.path}
+                        className={`sidebar-nav-item ${pathname === item.path ? 'active' : ''}`}
                     >
                         <item.icon className="w-5 h-5" />
                         <span>{item.label}</span>
-                    </NavLink>
+                    </Link>
                 ))}
 
                 {/* Recent section */}
@@ -44,13 +50,13 @@ export default function Sidebar({ recentDocs = [] }) {
                             Recent
                         </div>
                         {recentDocs.slice(0, 5).map((doc) => (
-                            <NavLink
+                            <Link
                                 key={doc.id}
-                                to={`/documents/${doc.id}`}
+                                href={`/documents/${doc.id}`}
                                 className="history-item block"
                             >
                                 {doc.filename}
-                            </NavLink>
+                            </Link>
                         ))}
                     </>
                 )}
