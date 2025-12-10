@@ -739,6 +739,7 @@ async def get_document_segments(
     from src.layout_analysis import (
         classify_segments,
         get_layout_summary,
+        get_classification_info,
         LAYOUT_COLORS
     )
     
@@ -777,14 +778,18 @@ async def get_document_segments(
         # Get segments
         segments = ocr_image_to_segments(image)
         
-        # If estimate_only, return info (LayoutLMv3 is free, no token cost)
+        # If estimate_only, get classification method info
         if estimate_only:
+            class_info = get_classification_info(len(segments))
             return {
                 "document_id": document_id,
                 "total_segments": len(segments),
-                "estimated_tokens": 0,  # LayoutLMv3 is free!
+                "estimated_tokens": class_info["estimated_tokens"],
+                "method": class_info["method"],
+                "model_name": class_info["model_name"],
+                "uses_tokens": class_info["uses_tokens"],
                 "classify": False,
-                "message": f"LayoutLMv3 classification is FREE for {len(segments)} segments (no API tokens needed)"
+                "message": class_info["message"]
             }
         
         # If classify requested, run layout classification with LayoutLMv3

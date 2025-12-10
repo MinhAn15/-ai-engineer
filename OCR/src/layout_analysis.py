@@ -198,6 +198,7 @@ class LayoutAnalyzer:
         # Assign types to segments based on overlap with detected regions
         for segment in segments:
             seg_bbox = segment.get('bbox', [0, 0, 0, 0])
+            text = segment.get('text', '').strip()
             best_match = None
             best_overlap = 0.0
             
@@ -208,15 +209,88 @@ class LayoutAnalyzer:
                     best_match = region
             
             if best_match and best_overlap > 0.3:
-                segment['type'] = best_match['type']
-                segment['type_confidence'] = best_match['confidence']
-                segment['color'] = best_match['color']
+                detected_type = best_match['type']
+                
+                # Smart sub-classification for table regions
+                # Not all text inside a table region should be labeled "table"
+                if detected_type == 'table':
+                    sub_type = self._classify_within_table(text, seg_bbox, best_match['bbox'])
+                    segment['type'] = sub_type
+                    segment['type_confidence'] = best_match['confidence'] * 0.8  # Slightly lower confidence
+                    segment['parent_region'] = 'table'
+                else:
+                    segment['type'] = detected_type
+                    segment['type_confidence'] = best_match['confidence']
+                
+                segment['color'] = LAYOUT_COLORS.get(segment['type'], '#6b7280')
                 segment['detection_method'] = 'foundation_model'
             else:
                 # No good match - use heuristic
                 self._apply_heuristic_type(segment)
         
         return segments
+    
+    def _classify_within_table(self, text: str, seg_bbox: Tuple, table_bbox: Tuple) -> str:
+        """
+        Smart classification for text within table regions.
+        
+        Forms and tables look similar to Table Transformer, but content differs:
+        - Table cells: data values, numbers, short entries
+        - Form labels: "Name:", "Address:", "Date:" patterns
+        - Form values: user-filled content after labels
+        - Headers/titles: ALL CAPS, short, at top of region
+        """
+        text_lower = text.lower().strip()
+        
+        # Check for form label patterns (ends with : or has :)
+        if ':' in text:
+            parts = text.split(':')
+            if len(parts) >= 2:
+                label = parts[0].strip()
+                value = ':'.join(parts[1:]).strip()
+                
+                # If label is short and value exists, it's likely a form
+                if len(label) < 30 and value:
+                    return 'form'
+                # If just a label (no value), still form
+                if len(label) < 30 and not value:
+                    return 'form'
+        
+        # Check for checkbox patterns
+        if any(c in text for c in ['☐', '☑', '☒', '□', '■', '✓', '✗']):
+            return 'checkbox'
+        if text_lower.startswith(('[ ]', '[x]', '[v]', '( )', '(x)')):
+            return 'checkbox'
+        
+        # Check for numbering/bullet patterns (list items)
+        if text_lower.startswith(('•', '-', '→', '○', '*')):
+            return 'list'
+        if len(text) > 2 and text[0].isdigit() and text[1] in '.):':
+            return 'list'
+        
+        # Check for title/header patterns
+        if len(text.split()) <= 5 and text.isupper():
+            return 'title'
+        
+        # Check if it's purely numeric or currency (likely table data)
+        text_clean = text.replace(',', '').replace('.', '').replace('$', '').replace('€', '').replace('%', '')
+        if text_clean.isdigit():
+            return 'table'
+        
+        # Check position within table region - headers at top
+        table_x, table_y, table_w, table_h = table_bbox
+        seg_x, seg_y, seg_w, seg_h = seg_bbox
+        relative_y = (seg_y - table_y) / table_h if table_h > 0 else 0
+        
+        if relative_y < 0.1 and len(text.split()) <= 5:
+            return 'title'  # Top 10% of table, short text = likely header
+        
+        # Default: if short text with no special patterns, consider it form/text
+        if len(text.split()) <= 3 and len(text) < 30:
+            return 'form'
+        
+        # Longer text with no patterns = regular text
+        return 'text'
     
     def _calculate_overlap(self, bbox1: Tuple, bbox2: Tuple) -> float:
         """Calculate IoU overlap between two bboxes (x, y, w, h)."""
@@ -433,6 +507,51 @@ def get_layout_analyzer() -> LayoutAnalyzer:
     if _analyzer is None:
         _analyzer = LayoutAnalyzer()
     return _analyzer
+
+
+def get_classification_info(num_segments: int = 0) -> Dict:
+    """
+    Get info about which classification method will be used.
+    
+    Returns:
+        Dict with method, uses_tokens, estimated_tokens, message
+    """
+    analyzer = get_layout_analyzer()
+    
+    if analyzer.foundation_model and analyzer.foundation_model.is_initialized:
+        return {
+            "method": "foundation_model",
+            "model_name": "Table Transformer",
+            "uses_tokens": False,
+            "estimated_tokens": 0,
+            "message": f"Table Transformer (local) - FREE for {num_segments} segments"
+        }
+    elif analyzer.model is not None:
+        return {
+            "method": "layoutlm",
+            "model_name": "LayoutLMv3",
+            "uses_tokens": False,
+            "estimated_tokens": 0,
+            "message": f"LayoutLMv3 (local) - FREE for {num_segments} segments"
+        }
+    elif analyzer.gemini_model is not None:
+        # Estimate: ~50 tokens per segment for Gemini Vision
+        estimated = num_segments * 50 + 500  # 500 base tokens for prompt
+        return {
+            "method": "gemini",
+            "model_name": "Gemini Vision",
+            "uses_tokens": True,
+            "estimated_tokens": estimated,
+            "message": f"Gemini Vision - ~{estimated:,} tokens for {num_segments} segments"
+        }
+    else:
+        return {
+            "method": "heuristic",
+            "model_name": "Heuristics",
+            "uses_tokens": False,
+            "estimated_tokens": 0,
+            "message": f"Heuristic rules - FREE for {num_segments} segments"
+        }
 
 
 def classify_segments(
